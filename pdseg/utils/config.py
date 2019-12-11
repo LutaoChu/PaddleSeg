@@ -35,6 +35,8 @@ cfg.TRAIN_CROP_SIZE = tuple()
 cfg.NUM_TRAINERS = 1
 # 多进程训练进程ID
 cfg.TRAINER_ID = 0
+
+cfg.EXPERIMENT_DIR = None
 ########################## 数据载入配置 #######################################
 # 数据载入时的并发数, 建议值8
 cfg.DATALOADER.NUM_WORKERS = 8
@@ -128,6 +130,7 @@ cfg.TRAIN.RESUME_MODEL_DIR = ''
 cfg.TRAIN.SYNC_BATCH_NORM = False
 # 模型参数保存的epoch间隔数，可用来继续训练中断的模型
 cfg.TRAIN.SNAPSHOT_EPOCH = 10
+cfg.TRAIN.EQUIBATCH = False
 
 ########################### 模型优化相关配置 ##################################
 # 初始学习率

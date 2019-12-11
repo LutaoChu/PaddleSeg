@@ -41,6 +41,7 @@ from models.model_builder import parse_shape_from_file
 from eval import evaluate
 from vis import visualize
 from utils import dist_utils
+from equibatch import equibatch
 
 
 def parse_args():
@@ -194,6 +195,9 @@ def train(cfg):
         mode=ModelPhase.TRAIN,
         shuffle=True,
         data_dir=cfg.DATASET.DATA_DIR)
+
+    if cfg.TRAIN.EQUIBATCH:
+        dataset = equibatch(dataset)
 
     def data_generator():
         if args.use_mpio:
