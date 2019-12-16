@@ -339,13 +339,16 @@ def eval_crop_size_check(max_height, max_width, min_aspectratio,
 def inf_resize_value_check():
     if cfg.AUG.AUG_METHOD == "rangescaling":
         if cfg.AUG.INF_RESIZE_VALUE < cfg.AUG.MIN_RESIZE_VALUE or \
-                cfg.AUG.INF_RESIZE_VALUE > cfg.AUG.MIN_RESIZE_VALUE:
+                cfg.AUG.INF_RESIZE_VALUE > cfg.AUG.MAX_RESIZE_VALUE:
+            logger.info(error_print("INF_RESIZE_VALUE check"))
             logger.info(
-                "\nWARNING! you set AUG.AUG_METHOD = 'rangescaling'"
-                "AUG.INF_RESIZE_VALUE: {} not in [AUG.MIN_RESIZE_VALUE, AUG.MAX_RESIZE_VALUE]: "
+                "You set AUG.AUG_METHOD = 'rangescaling', "
+                "but AUG.INF_RESIZE_VALUE: {} is not in [AUG.MIN_RESIZE_VALUE, AUG.MAX_RESIZE_VALUE]: "
                 "[{}, {}].".format(cfg.AUG.INF_RESIZE_VALUE,
                                    cfg.AUG.MIN_RESIZE_VALUE,
                                    cfg.AUG.MAX_RESIZE_VALUE))
+        else:
+            logger.info(correct_print("INF_RESIZE_VALUE check"))
 
 
 def image_type_check(img_dim):
