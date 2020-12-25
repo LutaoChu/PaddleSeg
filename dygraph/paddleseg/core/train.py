@@ -117,6 +117,12 @@ def train(model,
             train_reader_cost += timer.elapsed_time()
             images = data[0]
             labels = data[1].astype('int64')
+
+            if hasattr(
+                    train_dataset,
+                    'disable_coarse') and iter == (iters - 9 * iters_per_epoch):
+                logger.info('Disable coarse dataset!')
+                train_dataset.disable_coarse()
             if hasattr(train_dataset,
                        'shuffle') and iter % iters_per_epoch == 0:
                 train_dataset.shuffle()

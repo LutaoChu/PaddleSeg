@@ -131,5 +131,8 @@ class CityscapesAutolabeling(paddle.io.Dataset):
     def shuffle(self):
         random.shuffle(self.coarse_file_list)
 
+    def disable_coarse(self):
+        self.coarse_file_list = self.file_list
+
     def __len__(self):
         return self.total_num_files
