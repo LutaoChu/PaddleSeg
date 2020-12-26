@@ -34,6 +34,7 @@ def check_logits_losses(logits, losses):
 def loss_computation(logits, label, losses):
     check_logits_losses(logits, losses)
     loss = 0
+    all_losses = []
     for i in range(len(logits)):
         logit = logits[i]
         #         if logit.shape[-2:] != label.shape[-2:]:
@@ -43,9 +44,11 @@ def loss_computation(logits, label, losses):
         #                 mode='bilinear',
         #                 align_corners=True,
         #                 align_mode=1)
-        loss_i = losses['types'][i](logit, label)
-        loss += losses['coef'][i] * loss_i
-    return loss
+        loss_i = losses['coef'][i] * losses['types'][i](logit, label)
+        loss += loss_i
+        all_losses.append(loss_i)
+    all_losses.append(loss)
+    return all_losses
 
 
 def train(model,
@@ -96,6 +99,9 @@ def train(model,
 
     timer = Timer()
     avg_loss = 0.0
+    avg_dual_task_loss = 0.0
+    avg_boot_loss = 0.0
+    avg_dice_loss = 0.0
     iters_per_epoch = len(batch_sampler)
     best_mean_iou = -1.0
     best_model_iter = -1
@@ -142,12 +148,11 @@ def train(model,
             else:
                 if nranks > 1:
                     logits = ddp_model(images)
-                    loss = loss_computation(logits, labels, losses)
-                    loss.backward()
                 else:
                     logits = model(images)
-                    loss = loss_computation(logits, labels, losses)
-                    loss.backward()
+                dual_task_loss, dice_loss, boot_loss, _, _, _, loss = loss_computation(
+                    logits, labels, losses)
+                loss.backward()
                 optimizer.step()
                 lr = optimizer.get_lr()
                 if isinstance(optimizer._learning_rate,
@@ -156,9 +161,16 @@ def train(model,
                 model.clear_gradients()
 
             avg_loss += loss.numpy()[0]
+            avg_dual_task_loss += dual_task_loss.numpy()[0]
+            avg_boot_loss += boot_loss.numpy()[0]
+            avg_dice_loss += dice_loss.numpy()[0]
+
             train_batch_cost += timer.elapsed_time()
             if (iter) % log_iters == 0 and local_rank == 0:
                 avg_loss /= log_iters
+                avg_dual_task_loss /= log_iters
+                avg_boot_loss /= log_iters
+                avg_dice_loss /= log_iters
                 avg_train_reader_cost = train_reader_cost / log_iters
                 avg_train_batch_cost = train_batch_cost / log_iters
                 train_reader_cost = 0.0
@@ -172,12 +184,21 @@ def train(model,
                             avg_train_reader_cost, eta))
                 if use_vdl:
                     log_writer.add_scalar('Train/loss', avg_loss, iter)
+                    log_writer.add_scalar('Train/dual_task_loss',
+                                          avg_dual_task_loss, iter)
+                    log_writer.add_scalar('Train/boot_loss', avg_boot_loss,
+                                          iter)
+                    log_writer.add_scalar('Train/dice_loss', avg_dice_loss,
+                                          iter)
                     log_writer.add_scalar('Train/lr', lr, iter)
                     log_writer.add_scalar('Train/batch_cost',
                                           avg_train_batch_cost, iter)
                     log_writer.add_scalar('Train/reader_cost',
                                           avg_train_reader_cost, iter)
                 avg_loss = 0.0
+                avg_dual_task_loss = 0.0
+                avg_boot_loss = 0.0
+                avg_dice_loss = 0.0
 
             if (iter % save_interval == 0
                     or iter == iters) and (val_dataset is not None):
