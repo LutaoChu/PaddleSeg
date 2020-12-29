@@ -141,7 +141,7 @@ class MscaleOCRNet(nn.Layer):
                 cls_out = scale_as(cls_out, x_1x, self.align_corners)
                 attn_out = scale_as(attn_out, x_1x, self.align_corners)
 
-            if s > 1.0:
+            if s >= 1.0:
                 attn_out = self.low2high_attn(attn_outs[-1], attn_out)
 
             cls_outs.append(cls_out)
