@@ -29,8 +29,7 @@ class MscaleOCRNet(nn.Layer):
             align_corners=align_corners,
             ms_attention=True)
         self.scale_attn = AttenHead(in_ch=ocr_mid_channels, out_ch=1)
-        self.low2high_attn = Low2HighAttenHead(
-            in_ch=2, out_ch=1, align_corners=align_corners)
+        self.low2high_attn = Low2HighAttenHead(in_ch=2, out_ch=1)
 
         self.n_scales = n_scales
         self.pretrained = pretrained
@@ -64,6 +63,8 @@ class MscaleOCRNet(nn.Layer):
         p_lo = pred_05x
         aux_lo = lo_outs['aux_out']
         attn_lo = lo_outs['attn']
+        p_lo_ = p_lo.detach()
+        aux_lo_ = aux_lo.detach()
         attn_lo_ = attn_lo.detach()
 
         hi_outs = self.single_scale_forward(x_1x)
@@ -76,16 +77,21 @@ class MscaleOCRNet(nn.Layer):
         attn_hi_ = attn_hi.detach()
 
         # combine lo and hi predictions with attention
-        p_lo = scale_as(p_lo * attn_lo, p_hi)
-        joint_pred = p_lo + p_hi * attn_hi
-        aux_lo = scale_as(aux_lo * attn_lo, p_hi)
-        joint_aux = aux_lo + aux_hi * attn_hi
+        p_lo = scale_as(p_lo, p_hi, self.align_corners)
+        aux_lo = scale_as(aux_lo, aux_hi, self.align_corners)
+        attn_lo = scale_as(attn_lo, attn_hi, self.align_corners)
+        attn_lo, attn_hi = softmax([attn_lo, attn_hi])
+        joint_pred = p_lo * attn_lo + p_hi * attn_hi
+        joint_aux = aux_lo * attn_lo + aux_hi * attn_hi
 
+        # detach branch
+        p_lo_ = scale_as(p_lo_, p_hi_, self.align_corners)
+        aux_lo_ = scale_as(aux_lo_, aux_hi_, self.align_corners)
+        attn_lo_ = scale_as(attn_lo_, attn_hi_, self.align_corners)
         new_attn_hi = self.low2high_attn(attn_lo_, attn_hi_)
-        p_lo_ = p_lo.detach()
-        joint_pred_ = p_lo_ + p_hi_ * new_attn_hi
-        aux_lo_ = aux_lo.detach()
-        joint_aux_ = aux_lo_ + aux_hi_ * new_attn_hi
+        attn_lo_, new_attn_hi = softmax([attn_lo_, new_attn_hi])
+        joint_pred_ = p_lo_ * attn_lo_ + p_hi_ * new_attn_hi
+        joint_aux_ = aux_lo_ * attn_lo_ + aux_hi_ * new_attn_hi
 
         # Optionally, apply supervision to the multi-scale predictions
         # directly.
@@ -127,8 +133,8 @@ class MscaleOCRNet(nn.Layer):
         #         scales = sorted(scales, reverse=True)
         scales = sorted(scales)
 
-        pred = None
-        aux = None
+        pred = 0
+        cls_outs = []
         attn_outs = []
 
         for s in scales:
@@ -141,23 +147,19 @@ class MscaleOCRNet(nn.Layer):
 
             cls_out = outs['cls_out']
             attn_out = outs['attn']
-            aux_out = outs['aux_out']
+            if s != 1.0:
+                cls_out = scale_as(cls_out, x_1x, self.align_corners)
+                attn_out = scale_as(attn_out, x_1x, self.align_corners)
 
-            if pred is None:
-                pred = cls_out * attn_out
-            elif s > 1.0:
-                # downscale previous
-                new_attn_out = self.low2high_attn(attn_outs[-1], attn_out)
-                #                 print(attn_outs[-1].shape, attn_out.shape, new_attn_out.shape)
-                cls_out = cls_out * new_attn_out
-                pred += scale_as(cls_out, pred, self.align_corners)
-            elif s == 1.0:
-                pred = scale_as(pred, cls_out, self.align_corners)
-                pred += cls_out * attn_out
-            else:
-                raise Exception()
+            if s > 1.0:
+                attn_out = self.low2high_attn(attn_outs[-1], attn_out)
 
+            cls_outs.append(cls_out)
             attn_outs.append(attn_out)
+
+        attn_outs = softmax(attn_outs)
+        for i in range(len(scales)):
+            pred += cls_outs[i] * attn_outs[i]
         return [pred]
 
     def single_scale_forward(self, x):
@@ -185,11 +187,10 @@ class MscaleOCRNet(nn.Layer):
 
 
 class Low2HighAttenHead(nn.Layer):
-    def __init__(self, in_ch, out_ch, align_corners):
+    def __init__(self, in_ch, out_ch):
         super(Low2HighAttenHead, self).__init__()
-        self.align_corners = align_corners
         # bottleneck channels for seg and attn heads
-        bot_ch = 32
+        bot_ch = 16
         self.low2high_atten_head = nn.Sequential(
             layers.ConvBNReLU(in_ch, bot_ch, 3, padding=1, bias_attr=False),
             layers.ConvBNReLU(bot_ch, bot_ch, 3, padding=1, bias_attr=False),
@@ -197,7 +198,6 @@ class Low2HighAttenHead(nn.Layer):
             nn.Sigmoid())
 
     def forward(self, low_attn, high_attn):
-        low_attn = scale_as(low_attn, high_attn, self.align_corners)
         fuse_attn = paddle.concat([low_attn, high_attn], axis=1)
         return self.low2high_atten_head(fuse_attn)
 
@@ -216,6 +216,12 @@ class AttenHead(nn.Layer):
 
     def forward(self, x):
         return self.atten_head(x)
+
+
+def softmax(attn_list):
+    fuse_attn = paddle.concat(attn_list, axis=1)
+    fuse_attn = nn.functional.softmax(fuse_attn, axis=1)
+    return [fuse_attn[:, i, :, :] for i in range(fuse_attn.shape[1])]
 
 
 def scale_as(x, y, align_corners=False):
