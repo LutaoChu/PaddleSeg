@@ -9,7 +9,7 @@ from .ocrnet_nv import OCRNetNV
 
 
 @manager.MODELS.add_component
-class MscaleOCRNet(nn.Layer):
+class MsClsInputAttenOCRNet(nn.Layer):
     def __init__(self,
                  num_classes,
                  backbone,
@@ -28,7 +28,7 @@ class MscaleOCRNet(nn.Layer):
             ocr_key_channels=ocr_key_channels,
             align_corners=align_corners,
             ms_attention=True)
-        self.scale_attn = AttenHead(in_ch=ocr_mid_channels, out_ch=1)
+        self.scale_attn = AttenHead(in_ch=num_classes, out_ch=1)
 
         self.n_scales = n_scales
         self.pretrained = pretrained
@@ -80,12 +80,10 @@ class MscaleOCRNet(nn.Layer):
         joint_pred = p_lo + p_1x * (1 - logit_attn)
         joint_aux = aux_lo + aux_1x * (1 - logit_attn)
 
-        output = [joint_pred, joint_aux]
-
         # Optionally, apply supervision to the multi-scale predictions
         # directly.
         scaled_pred_05x = scale_as(pred_05x, p_1x)
-        output.extend([scaled_pred_05x, pred_10x])
+        output = [joint_pred, joint_aux, scaled_pred_05x, pred_10x]
         output.extend(output)
         return output
 
@@ -153,7 +151,7 @@ class MscaleOCRNet(nn.Layer):
     def single_scale_forward(self, x):
         x_size = x.shape[2:]
         cls_out, aux_out, ocr_mid_feats = self.ocrnet(x)
-        attn = self.scale_attn(ocr_mid_feats)
+        attn = self.scale_attn(cls_out)
 
         cls_out = nn.functional.interpolate(
             cls_out,
