@@ -21,6 +21,7 @@ from paddleseg.cvlibs import manager, Config
 from paddleseg.core.val_img import evaluate
 from paddleseg.utils import get_sys_env, logger, utils
 from paddleseg.datasets.dataset_no_transform import DatasetNoTransform
+"""直接对预测结果和真值计算指标，不用model预测"""
 
 
 def parse_args():

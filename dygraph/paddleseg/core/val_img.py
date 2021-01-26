@@ -33,6 +33,7 @@ def evaluate(eval_dataset,
              stride=None,
              crop_size=None,
              num_workers=0):
+    """直接对预测结果和真值计算指标，不用model预测"""
     nranks = paddle.distributed.ParallelEnv().nranks
     local_rank = paddle.distributed.ParallelEnv().local_rank
     if nranks > 1:
